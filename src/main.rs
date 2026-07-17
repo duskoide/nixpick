@@ -1,16 +1,17 @@
 mod app;
+mod cli;
 mod generate;
 mod search;
 mod ui;
 
 use std::io::{self, stdout};
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Result;
 use app::{App, Focus};
+use clap::Parser;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
+    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
     KeyModifiers,
 };
 use crossterm::execute;
@@ -22,6 +23,8 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use search::SearchClient;
 use tokio::sync::mpsc;
+
+use crate::cli::Cli;
 
 enum Msg {
     SearchDone {
@@ -38,12 +41,23 @@ enum Msg {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let target = std::env::args()
-        .nth(1)
-        .map(PathBuf::from)
+    let cli = Cli::parse();
+
+    // No subcommand → launch the interactive TUI.
+    if cli.command.is_none() {
+        return run_tui(cli).await;
+    }
+
+    cli::run(cli).await
+}
+
+async fn run_tui(cli: Cli) -> Result<()> {
+    let target = cli
+        .target
+        .clone()
         .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
 
-    let mut client = SearchClient::new(None);
+    let mut client = SearchClient::new(cli.channel.clone());
     let channel = client.channel().to_string();
     let mut app = App::new(target, channel);
 
@@ -337,8 +351,4 @@ fn cycle_channel(app: &mut App, client: &mut SearchClient) {
     }
 }
 
-// silence unused import warning path for event poll if any
-#[allow(dead_code)]
-fn _poll_hint() {
-    let _ = event::poll(Duration::from_millis(0));
-}
+
